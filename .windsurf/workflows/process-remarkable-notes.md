@@ -68,7 +68,7 @@ Found these people in the note:
 **d) Classify and file the note**
 
 Based on the note type in frontmatter:
-- `meeting` → `~/Documents/Obsidian/brain.ai-vault/Meetings/YYYY/MM/`
+- `meeting` → `~/Documents/Obsidian/brain.ai-vault/Meetings/YYYY/MM-MonthName/`
 - `note`, `reference`, `project` → `~/Documents/Obsidian/brain.ai-vault/Notes/Projects/`
 - Other → `~/Documents/Obsidian/brain.ai-vault/Notes/Projects/`
 
@@ -89,6 +89,15 @@ tags:
 # Person Name
 
 > Auto-created stub. Add details about this person here.
+
+## Mentioned In
+
+```dataview
+LIST
+FROM "Meetings" OR "Notes"
+WHERE contains(file.outlinks, this.file.link)
+SORT file.name ASC
+```
 ```
 
 **f) Move PDF to processed**
@@ -100,6 +109,8 @@ mv inbox/filename.pdf inbox/processed/
 ### 3. Repeat for all PDFs
 
 Process each PDF in the inbox folder.
+
+**Note:** Person files automatically show mentions via Dataview queries - no manual update needed!
 
 ## Example Interaction
 

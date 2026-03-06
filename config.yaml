@@ -47,8 +47,9 @@ claude:
 
 # Obsidian vault folder structure
 folders:
+  clients: Notes
   meetings: Meetings
-  notes: Notes/Projects
+  notes: Notes
   people: People
   daily: Daily
 
@@ -69,6 +70,10 @@ tags:
 # Note classification rules
 # Claude uses these keywords to decide which folder a note belongs in
 classification:
+  client_keywords:
+    - client
+    - customer
+    - company
   meeting_keywords:
     - meeting
     - standup

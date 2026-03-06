@@ -149,13 +149,13 @@ def classify_note(frontmatter: dict, config: dict) -> str:
     note_date = frontmatter.get("date", datetime.now().strftime("%Y-%m-%d"))
 
     if note_type == "meeting":
-        # Meetings go into Meetings/YYYY/MM/
+        # Meetings go into Meetings/YYYY/MM-MonthName/
         try:
             dt = datetime.strptime(str(note_date), "%Y-%m-%d")
-            return f"{folders.get('meetings', 'Meetings')}/{dt.year}/{dt.strftime('%m')}"
+            return f"{folders.get('meetings', 'Meetings')}/{dt.year}/{dt.strftime('%m-%B')}"
         except (ValueError, TypeError):
             now = datetime.now()
-            return f"{folders.get('meetings', 'Meetings')}/{now.year}/{now.strftime('%m')}"
+            return f"{folders.get('meetings', 'Meetings')}/{now.year}/{now.strftime('%m-%B')}"
 
     elif note_type in ("reference", "project"):
         return folders.get("notes", "Notes/Projects")
