@@ -1,0 +1,374 @@
+#!/usr/bin/env python3
+"""
+process_notes.py — Claude OCR + Markdown Generator
+
+Watches the inbox folder for new PDFs, sends each page to Claude Vision API
+for handwriting OCR, and writes structured Markdown files to the Obsidian vault.
+"""
+
+import base64
+import os
+import re
+import shutil
+import sys
+from datetime import datetime
+from pathlib import Path
+
+import anthropic
+import yaml
+from pdf2image import convert_from_path
+
+
+def load_config() -> dict:
+    """Load configuration from config.yaml."""
+    config_path = Path(__file__).parent.parent / "config.yaml"
+    with open(config_path, "r") as f:
+        return yaml.safe_load(f)
+
+
+def resolve_path(path_str: str) -> Path:
+    """Resolve ~ and relative paths against the project root."""
+    path = Path(path_str).expanduser()
+    if not path.is_absolute():
+        path = Path(__file__).parent.parent / path
+    return path
+
+
+def load_system_prompt() -> str:
+    """Load the OCR system prompt from prompts/ocr_and_structure.md."""
+    prompt_path = Path(__file__).parent.parent / "prompts" / "ocr_and_structure.md"
+    with open(prompt_path, "r") as f:
+        content = f.read()
+    # Strip the markdown title line
+    lines = content.strip().split("\n")
+    if lines[0].startswith("# "):
+        lines = lines[1:]
+    return "\n".join(lines).strip()
+
+
+def pdf_to_images(pdf_path: Path) -> list[bytes]:
+    """
+    Convert a PDF to a list of PNG images (one per page).
+
+    Returns a list of PNG byte buffers.
+    """
+    print(f"  Converting PDF to images...")
+    images = convert_from_path(str(pdf_path), dpi=200, fmt="png")
+
+    png_buffers = []
+    for i, img in enumerate(images):
+        import io
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        png_buffers.append(buf.getvalue())
+        print(f"    Page {i + 1}: {len(buf.getvalue()) / 1024:.0f} KB")
+
+    return png_buffers
+
+
+def image_to_base64(image_bytes: bytes) -> str:
+    """Encode image bytes as base64 string."""
+    return base64.standard_b64encode(image_bytes).decode("utf-8")
+
+
+def ocr_with_claude(
+    client: anthropic.Anthropic,
+    images: list[bytes],
+    system_prompt: str,
+    model: str,
+    max_tokens: int,
+) -> str:
+    """
+    Send page images to Claude Vision API for OCR and structuring.
+
+    If the PDF has multiple pages, all pages are sent in a single request
+    so Claude can produce one coherent structured note.
+    """
+    # Build the content array with all page images
+    content = []
+
+    if len(images) > 1:
+        content.append({
+            "type": "text",
+            "text": f"This document has {len(images)} pages. Please OCR and structure all pages into a single coherent note.",
+        })
+
+    for i, img_bytes in enumerate(images):
+        b64 = image_to_base64(img_bytes)
+        content.append({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": b64,
+            },
+        })
+        if len(images) > 1:
+            content.append({
+                "type": "text",
+                "text": f"(Page {i + 1} of {len(images)})",
+            })
+
+    if len(images) == 1:
+        content.append({
+            "type": "text",
+            "text": "Please OCR this handwritten note and structure it as Markdown with YAML frontmatter.",
+        })
+
+    print(f"  Sending {len(images)} page(s) to Claude ({model})...")
+
+    response = client.messages.create(
+        model=model,
+        max_tokens=max_tokens,
+        system=system_prompt,
+        messages=[{"role": "user", "content": content}],
+    )
+
+    return response.content[0].text
+
+
+def extract_frontmatter(markdown: str) -> dict:
+    """Extract YAML frontmatter from a markdown string."""
+    match = re.match(r"^---\s*\n(.*?)\n---", markdown, re.DOTALL)
+    if match:
+        try:
+            return yaml.safe_load(match.group(1)) or {}
+        except yaml.YAMLError:
+            return {}
+    return {}
+
+
+def classify_note(frontmatter: dict, config: dict) -> str:
+    """
+    Determine which vault subfolder a note belongs in based on its type and content.
+
+    Returns the subfolder path relative to the vault root.
+    """
+    note_type = frontmatter.get("type", "note")
+    folders = config.get("folders", {})
+    note_date = frontmatter.get("date", datetime.now().strftime("%Y-%m-%d"))
+
+    if note_type == "meeting":
+        # Meetings go into Meetings/YYYY/MM/
+        try:
+            dt = datetime.strptime(str(note_date), "%Y-%m-%d")
+            return f"{folders.get('meetings', 'Meetings')}/{dt.year}/{dt.strftime('%m')}"
+        except (ValueError, TypeError):
+            now = datetime.now()
+            return f"{folders.get('meetings', 'Meetings')}/{now.year}/{now.strftime('%m')}"
+
+    elif note_type in ("reference", "project"):
+        return folders.get("notes", "Notes/Projects")
+
+    else:
+        # Default: Notes/Projects
+        return folders.get("notes", "Notes/Projects")
+
+
+def generate_filename(frontmatter: dict) -> str:
+    """Generate a filename from frontmatter metadata."""
+    title = frontmatter.get("title", "Untitled Note")
+    date = frontmatter.get("date", datetime.now().strftime("%Y-%m-%d"))
+
+    # Sanitize title for filename
+    safe_title = re.sub(r"[^\w\s-]", "", str(title))
+    safe_title = re.sub(r"\s+", "-", safe_title.strip())
+    safe_title = safe_title[:80]  # Limit length
+
+    return f"{date}-{safe_title}.md"
+
+
+def ensure_people_notes(frontmatter: dict, vault_path: Path, people_folder: str):
+    """
+    Create stub notes for any referenced people who don't have a note yet.
+
+    This ensures [[wikilinks]] to people don't result in dead links.
+    """
+    people = frontmatter.get("people", [])
+    people_dir = vault_path / people_folder
+
+    for person_link in people:
+        # Extract name from [[Person Name]] format
+        name = person_link.strip("[]").strip()
+        if not name:
+            continue
+
+        person_file = people_dir / f"{name}.md"
+        if not person_file.exists():
+            people_dir.mkdir(parents=True, exist_ok=True)
+            stub = f"""---
+title: "{name}"
+type: person
+tags:
+  - person
+---
+
+# {name}
+
+> Auto-created stub. Add details about this person here.
+"""
+            with open(person_file, "w") as f:
+                f.write(stub)
+            print(f"    Created person stub: {name}.md")
+
+
+def process_pdf(
+    pdf_path: Path,
+    client: anthropic.Anthropic,
+    system_prompt: str,
+    config: dict,
+    vault_path: Path,
+    processed_path: Path,
+) -> Path | None:
+    """
+    Process a single PDF through the full pipeline:
+    PDF → images → Claude OCR → structured markdown → Obsidian vault.
+
+    Returns the path to the created markdown file, or None on failure.
+    """
+    print(f"\nProcessing: {pdf_path.name}")
+
+    claude_config = config["claude"]
+    folders = config.get("folders", {})
+
+    # Step 1: Convert PDF to images
+    try:
+        images = pdf_to_images(pdf_path)
+    except Exception as e:
+        print(f"  ✗ Failed to convert PDF: {e}")
+        print(f"    Make sure poppler is installed: brew install poppler")
+        return None
+
+    if not images:
+        print(f"  ✗ No pages found in PDF")
+        return None
+
+    # Step 2: Send to Claude for OCR
+    try:
+        markdown = ocr_with_claude(
+            client=client,
+            images=images,
+            system_prompt=system_prompt,
+            model=claude_config["model"],
+            max_tokens=claude_config["max_tokens"],
+        )
+    except anthropic.APIError as e:
+        print(f"  ✗ Claude API error: {e}")
+        return None
+
+    # Strip any markdown code fences Claude may have wrapped the output in
+    markdown = re.sub(r"^```markdown\s*\n", "", markdown)
+    markdown = re.sub(r"\n```\s*$", "", markdown)
+
+    # Step 3: Extract metadata and classify
+    frontmatter = extract_frontmatter(markdown)
+    subfolder = classify_note(frontmatter, config)
+    filename = generate_filename(frontmatter)
+
+    # Step 4: Write to vault
+    output_dir = vault_path / subfolder
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / filename
+
+    # Handle filename collisions
+    counter = 1
+    while output_path.exists():
+        stem = output_path.stem
+        output_path = output_dir / f"{stem}_{counter}.md"
+        counter += 1
+
+    with open(output_path, "w") as f:
+        f.write(markdown)
+
+    print(f"  ✓ Written to: {output_path.relative_to(vault_path)}")
+
+    # Step 5: Create person stubs if needed
+    ensure_people_notes(frontmatter, vault_path, folders.get("people", "People"))
+
+    # Step 6: Move PDF to processed folder
+    processed_path.mkdir(parents=True, exist_ok=True)
+    processed_dest = processed_path / pdf_path.name
+    shutil.move(str(pdf_path), str(processed_dest))
+    print(f"  ✓ Moved PDF to processed/")
+
+    return output_path
+
+
+def process_all(config: dict) -> list[Path]:
+    """
+    Process all PDFs in the inbox folder.
+
+    Returns a list of paths to created markdown files.
+    """
+    # Validate API key
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        print("✗ ANTHROPIC_API_KEY environment variable not set.")
+        print("  Export it before running:")
+        print("  export ANTHROPIC_API_KEY='your-key-here'")
+        return []
+
+    # Resolve paths
+    vault_path = resolve_path(config["vault_path"])
+    inbox_path = resolve_path(config["inbox_path"])
+    processed_path = resolve_path(config["processed_path"])
+
+    # Ensure vault exists
+    if not vault_path.exists():
+        print(f"Creating vault directory: {vault_path}")
+        vault_path.mkdir(parents=True, exist_ok=True)
+
+    # Find PDFs in inbox
+    pdfs = sorted(inbox_path.glob("*.pdf"))
+    if not pdfs:
+        print("No PDFs found in inbox.")
+        return []
+
+    print(f"Found {len(pdfs)} PDF(s) to process")
+
+    # Initialize Claude client
+    client = anthropic.Anthropic(api_key=api_key)
+    system_prompt = load_system_prompt()
+
+    # Process each PDF
+    created = []
+    for pdf_path in pdfs:
+        result = process_pdf(
+            pdf_path=pdf_path,
+            client=client,
+            system_prompt=system_prompt,
+            config=config,
+            vault_path=vault_path,
+            processed_path=processed_path,
+        )
+        if result:
+            created.append(result)
+
+    return created
+
+
+def main():
+    """Entry point."""
+    config = load_config()
+
+    print("=" * 50)
+    print("brain.ai — Note Processor (Claude OCR)")
+    print("=" * 50)
+    print()
+
+    created = process_all(config)
+
+    print()
+    print(f"{'=' * 50}")
+    if created:
+        print(f"✓ Created {len(created)} note(s):")
+        for path in created:
+            print(f"  • {path.name}")
+    else:
+        print("No notes created.")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,4 @@
+briefings/*
+inbox/processed/*
+
+.venv

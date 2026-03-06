@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Label: unique identifier for this job -->
+    <key>Label</key>
+    <string>com.brain-ai.ingest</string>
+
+    <!-- Program: full pipeline — ingest from reMarkable, then process with Claude -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>
+            cd /Users/nicklaslarson/code/brain.ai &amp;&amp;
+            /usr/bin/python3 scripts/rm_ingest.py &amp;&amp;
+            /usr/bin/python3 scripts/process_notes.py
+        </string>
+    </array>
+
+    <!-- Run every 30 minutes when active -->
+    <key>StartInterval</key>
+    <integer>1800</integer>
+
+    <!-- Also run when the reMarkable USB device is mounted -->
+    <!-- Uncomment if you want to trigger on USB connection instead of a timer -->
+    <!--
+    <key>WatchPaths</key>
+    <array>
+        <string>/Volumes/reMarkable</string>
+    </array>
+    -->
+
+    <!-- Environment variables -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin</string>
+        <!-- Set your Anthropic API key here or in ~/.zshrc -->
+        <key>ANTHROPIC_API_KEY</key>
+        <string>YOUR_API_KEY_HERE</string>
+    </dict>
+
+    <!-- Working directory -->
+    <key>WorkingDirectory</key>
+    <string>/Users/nicklaslarson/code/brain.ai</string>
+
+    <!-- Logging -->
+    <key>StandardOutPath</key>
+    <string>/Users/nicklaslarson/code/brain.ai/logs/ingest.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/nicklaslarson/code/brain.ai/logs/ingest-error.log</string>
+
+    <!-- Don't run at load — wait for the interval -->
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

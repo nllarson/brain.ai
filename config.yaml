@@ -1,0 +1,85 @@
+# brain.ai configuration
+# Second Brain Pipeline: reMarkable → Claude → Obsidian
+
+# Obsidian vault location
+vault_path: ~/Documents/Obsidian/brain.ai-vault
+
+# Inbox where raw PDFs from reMarkable are stored
+inbox_path: ./inbox
+processed_path: ./inbox/processed
+
+# reMarkable USB web interface
+remarkable:
+  host: http://10.11.99.1
+  # State file to track already-downloaded notebooks
+  state_file: ./.state.json
+  # Filter notebooks by name or folder (supports wildcards: *, ?, [abc])
+  # Leave empty to download all notebooks
+  # Examples:
+  #   - "Sales" → all notebooks in Sales folder
+  #   - "Sales/*" → same as above
+  #   - "Sales/Aruba" → specific notebook in Sales folder
+  #   - "Meeting*" → notebooks with names starting with "Meeting"
+  include_patterns: []
+  
+  # Optional: exclude patterns (applied after include)
+  exclude_patterns: 
+    - "2026 - Planner"
+    - "Archive"
+    - "Books"
+    - "Personal"
+  
+  # Upload settings (for syncing briefings/summaries back to reMarkable)
+  upload:
+    enabled: true      # Enable/disable upload functionality
+    auto_sync: true    # Automatically upload after generation (no prompt)
+
+# Processing mode
+# - "standalone": use process_notes.py with Anthropic API key
+# - "claude-code": use Claude Code workflow (no API key needed)
+processing_mode: claude-code
+
+# Claude API settings (only used in standalone mode)
+claude:
+  model: claude-sonnet-4-20250514
+  max_tokens: 4096
+  # API key is read from ANTHROPIC_API_KEY environment variable
+
+# Obsidian vault folder structure
+folders:
+  meetings: Meetings
+  notes: Notes/Projects
+  people: People
+  daily: Daily
+
+# Tag taxonomy — Claude will use these when tagging notes
+tags:
+  categories:
+    - meeting
+    - note
+    - idea
+    - action-item
+    - reference
+    - project
+  priorities:
+    - high
+    - medium
+    - low
+
+# Note classification rules
+# Claude uses these keywords to decide which folder a note belongs in
+classification:
+  meeting_keywords:
+    - meeting
+    - standup
+    - sync
+    - 1:1
+    - review
+    - retro
+    - kickoff
+    - call
+  people_keywords:
+    - person
+    - contact
+    - bio
+    - profile

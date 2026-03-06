@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "obsidian-vault": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-obsidian",
+        "/Users/nicklaslarson/Documents/Obsidian/brain.ai-vault"
+      ],
+      "env": {}
+    }
+  }
+}
