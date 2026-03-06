@@ -115,17 +115,15 @@ def markdown_to_pdf(md_path: Path, output_path: Path) -> bool:
         metadata_html = ""
         if metadata:
             meta_items = []
-            if "date" in metadata:
-                meta_items.append(f"<strong>Date:</strong> {metadata['date']}")
-            if "people" in metadata and metadata["people"]:
-                people = ", ".join(metadata["people"])
-                meta_items.append(f"<strong>With:</strong> {people}")
-            if "projects" in metadata and metadata["projects"]:
-                projects = ", ".join(metadata["projects"])
-                meta_items.append(f"<strong>Projects:</strong> {projects}")
+            # Only show tags if present (not date/people/projects since they're in body)
+            if "tags" in metadata and metadata["tags"]:
+                # Filter out 'briefing' tag and strip wikilink brackets
+                tags = [tag.replace('[[', '').replace(']]', '') for tag in metadata["tags"] if tag != "briefing"]
+                if tags:
+                    meta_items.append(f"<strong>Tags:</strong> {', '.join(tags)}")
             
             if meta_items:
-                metadata_html = f'<div class="metadata">{" | ".join(meta_items)}</div>'
+                metadata_html = f'<div class="metadata">{", ".join(meta_items)}</div>'
         
         # Build complete HTML
         html_content = f"""
