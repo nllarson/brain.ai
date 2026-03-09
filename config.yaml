@@ -20,7 +20,15 @@ remarkable:
   #   - "Sales/*" → same as above
   #   - "Sales/Aruba" → specific notebook in Sales folder
   #   - "Meeting*" → notebooks with names starting with "Meeting"
-  include_patterns: []
+  include_patterns: 
+    - "Quick Notes"
+    - "Sales/*"
+    - "Sales/*/*"
+    - "Clients/*"
+    - "Clients/*/*"
+    - "Improving/*"
+    - "Improving/*/*"
+  
   
   # Optional: exclude patterns (applied after include)
   exclude_patterns: 
@@ -28,6 +36,8 @@ remarkable:
     - "Archive"
     - "Books"
     - "Personal"
+    - "Improving/Interviews"
+    - "Improving/Archive"
   
   # Upload settings (for syncing briefings/summaries back to reMarkable)
   upload:

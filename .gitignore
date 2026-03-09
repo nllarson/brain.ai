@@ -3,3 +3,4 @@ inbox/processed/*
 
 .venv
 .state.json
+.cleanup-log

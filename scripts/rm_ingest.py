@@ -134,25 +134,36 @@ def list_documents(host: str) -> tuple[list[dict], dict[str, str]]:
     folders = {}
     all_documents = []
     
+    def fetch_folder_contents(folder_id: str, folder_path: str):
+        """Recursively fetch contents of a folder and its subfolders."""
+        folder_url = f"{host}/documents/{folder_id}"
+        try:
+            folder_resp = requests.get(folder_url, timeout=10)
+            folder_resp.raise_for_status()
+            folder_contents = folder_resp.json()
+            
+            for item in folder_contents:
+                if item["Type"] == "DocumentType":
+                    # Add document with full folder path
+                    all_documents.append(item)
+                elif item["Type"] == "CollectionType":
+                    # Nested folder - recurse into it
+                    subfolder_id = item["ID"]
+                    subfolder_name = item.get("VisibleName", item.get("VissibleName", ""))
+                    subfolder_path = f"{folder_path}/{subfolder_name}"
+                    folders[subfolder_id] = subfolder_path
+                    fetch_folder_contents(subfolder_id, subfolder_path)
+        except requests.RequestException as e:
+            print(f"[WARN] Failed to fetch folder '{folder_path}': {e}")
+    
     for item in top_level:
         if item["Type"] == "CollectionType":
             folder_id = item["ID"]
             folder_name = item.get("VisibleName", item.get("VissibleName", ""))
             folders[folder_id] = folder_name
             
-            # Fetch documents inside this folder
-            folder_url = f"{host}/documents/{folder_id}"
-            try:
-                folder_resp = requests.get(folder_url, timeout=10)
-                folder_resp.raise_for_status()
-                folder_contents = folder_resp.json()
-                
-                # Add documents from this folder
-                for doc in folder_contents:
-                    if doc["Type"] == "DocumentType":
-                        all_documents.append(doc)
-            except requests.RequestException as e:
-                print(f"[WARN] Failed to fetch folder '{folder_name}': {e}")
+            # Recursively fetch this folder and all subfolders
+            fetch_folder_contents(folder_id, folder_name)
         
         elif item["Type"] == "DocumentType":
             # Root-level document
