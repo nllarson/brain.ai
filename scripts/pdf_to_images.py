@@ -3,7 +3,7 @@
 
 import sys
 from pathlib import Path
-from pdf2image import convert_from_path
+import fitz  # PyMuPDF
 
 def pdf_to_images(pdf_path: str, output_dir: str = None) -> list[str]:
     """
@@ -20,17 +20,23 @@ def pdf_to_images(pdf_path: str, output_dir: str = None) -> list[str]:
     
     output_dir.mkdir(exist_ok=True)
     
-    # Convert PDF to images
-    images = convert_from_path(str(pdf_path), dpi=200, fmt="png")
-    
+    # Open PDF
+    doc = fitz.open(str(pdf_path))
     output_paths = []
     base_name = pdf_path.stem
     
-    for i, img in enumerate(images, 1):
-        output_path = output_dir / f"{base_name}_page_{i}.png"
-        img.save(output_path, "PNG")
+    # Convert each page to image
+    for page_num in range(len(doc)):
+        page = doc[page_num]
+        # Render page to image (200 DPI)
+        mat = fitz.Matrix(200/72, 200/72)  # 200 DPI scaling
+        pix = page.get_pixmap(matrix=mat)
+        
+        output_path = output_dir / f"{base_name}_page_{page_num + 1}.png"
+        pix.save(str(output_path))
         output_paths.append(str(output_path))
     
+    doc.close()
     return output_paths
 
 if __name__ == "__main__":

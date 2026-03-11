@@ -1,5 +1,6 @@
 briefings/*
 inbox/processed/*
+temp/pdf_images/*
 
 .venv
 .state.json

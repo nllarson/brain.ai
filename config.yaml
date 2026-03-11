@@ -22,6 +22,7 @@ remarkable:
   #   - "Meeting*" → notebooks with names starting with "Meeting"
   include_patterns: 
     - "Quick Notes"
+    - "Daily Notes"
     - "Sales/*"
     - "Sales/*/*"
     - "Clients/*"
